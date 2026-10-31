@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>RV Reviews - Admin</title>
+<style>
+  :root{--ouro:#f9b600;--tx:#222;--fundo:#f4f4f6;--card:#fff;--borda:#ddd}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,Arial,sans-serif;background:var(--fundo);color:var(--tx)}
+  main{max-width:720px;margin:0 auto;padding:16px}
+  h1{font-size:1.3em;margin:8px 0 14px}
+  .caixa{background:var(--card);border:1px solid var(--borda);border-radius:14px;padding:16px;margin-bottom:14px}
+  label{display:block;font-weight:700;font-size:.9em;margin:12px 0 5px}
+  input[type=text],input[type=password],textarea,select{width:100%;padding:11px 12px;border:1px solid #ccc;border-radius:10px;font:inherit;background:#fff}
+  textarea{min-height:90px;resize:vertical}
+  button{font:inherit;cursor:pointer;border:0;border-radius:99px;padding:11px 20px;font-weight:700}
+  .p{background:var(--ouro);color:#222}.v{background:#2e7d32;color:#fff}.r{background:#c62828;color:#fff}.c{background:#e6e6e6;color:#333}
+  button[disabled]{opacity:.5;cursor:default}
+  .abas{display:flex;gap:8px;margin-bottom:14px}
+  .abas button{flex:1}
+  .abas button.on{background:var(--ouro);color:#222}
+  .abas button:not(.on){background:#e6e6e6;color:#333}
+  .msg{margin:10px 0;font-size:.95em}.msg.erro{color:#c62828}.msg.ok{color:#2e7d32}
+  .pend{display:flex;gap:12px}
+  .pend .fotos img{width:72px;height:72px}
+  .pend .corpo{flex:1;min-width:0}
+  .pend .acoes{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+  .est{color:var(--ouro);letter-spacing:2px;font-size:1.1em}
+  .slug{font-size:.8em;color:#666;word-break:break-all}
+  .texto{margin:6px 0 0;white-space:pre-line;word-break:break-word}
+  .pick{display:flex;gap:4px}
+  .pick button{background:none;padding:0 2px;font-size:34px;line-height:1;color:#d0d0d0;border-radius:0}
+  .pick button.on{color:var(--ouro)}
+  .previs{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .pv{position:relative;width:86px;height:86px}
+  .pv img{width:100%;height:100%;object-fit:cover;border-radius:10px;display:block}
+  .pv button{position:absolute;top:-6px;right:-6px;width:24px;height:24px;border-radius:50%;background:#c62828;color:#fff;padding:0;line-height:24px;font-size:15px}
+  .fotos{display:flex;gap:6px;flex:none;flex-direction:column}
+  .fotos img{width:72px;height:72px;object-fit:cover;border-radius:10px;background:#eee}
+  .oculto{display:none}
+</style>
+</head>
+<body>
+<main>
+  <h1>RV Reviews - Admin</h1>
+
+  <div class="caixa" id="login">
+    <label for="api">Endereço do servidor (o da Cloudflare)</label>
+    <input type="text" id="api" placeholder="https://rv-api.seunome.workers.dev" autocomplete="off">
+    <label for="senha">Senha</label>
+    <input type="password" id="senha" autocomplete="current-password">
+    <div style="margin-top:14px"><button class="p" id="entrar">Entrar</button></div>
+    <div class="msg" id="msgLogin"></div>
+  </div>
+
+  <div id="painel" class="oculto">
+    <div class="abas">
+      <button id="abaPend" class="on">Para aprovar <span id="qtd"></span></button>
+      <button id="abaManual">Adicionar avaliação</button>
+    </div>
+
+    <section id="secPend">
+      <div class="msg" id="msgPend"></div>
+      <div id="lista"></div>
+      <button class="c" id="atualizar">Atualizar lista</button>
+    </section>
+
+    <section id="secManual" class="oculto">
+      <div class="caixa">
+        <label for="mLink">Link do produto na loja (ou só o final do endereço)</label>
+        <input type="text" id="mLink" placeholder="https://www.glowebeleza.com/produtos/nome-do-produto/" autocomplete="off">
+        <label for="mNome">Nome de quem avaliou</label>
+        <input type="text" id="mNome" maxlength="40" autocomplete="off">
+        <label>Nota</label>
+        <div class="pick" id="mPick"></div>
+        <label for="mTexto">Comentário</label>
+        <textarea id="mTexto" maxlength="1500"></textarea>
+        <label for="mFoto">Fotos (opcional, até 3)</label>
+        <input type="file" id="mFoto" accept="image/*" multiple>
+        <div class="previs" id="mPrevis"></div>
+        <div class="msg" id="msgManual"></div>
+        <button class="p" id="mEnviar">Publicar agora</button>
+      </div>
+    </section>
+  </div>
+</main>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var api = "", senha = "";
+  try { api = localStorage.getItem("rv_api") || ""; } catch (e) {}
+  $("api").value = api;
+
+  function chamar(rota, corpo) {
+    corpo = corpo || {};
+    corpo.senha = senha;
+    return fetch(api.replace(/\/$/, "") + rota, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpo)
+    }).then(function (r) { return r.json().catch(function () { return { ok: false, erro: "Resposta inesperada." }; }); },
+            function () { return { ok: false, erro: "Sem conexão com o servidor." }; });
+  }
+  function msg(el, t, cls) { el.textContent = t || ""; el.className = "msg " + (cls || ""); }
+  function slugDe(t) {
+    t = String(t || "").trim();
+    var m = /\/produtos\/([^\/?#]+)/i.exec(t);
+    return (m ? m[1] : t.replace(/^\/+|\/+$/g, "")).toLowerCase();
+  }
+
+  // ---- entrar ----
+  $("entrar").addEventListener("click", function () {
+    api = $("api").value.trim(); senha = $("senha").value;
+    if (!/^https:\/\//.test(api)) return msg($("msgLogin"), "Cole o endereço do servidor (começa com https://).", "erro");
+    if (!senha) return msg($("msgLogin"), "Digite a senha.", "erro");
+    msg($("msgLogin"), "Entrando...");
+    chamar("/admin/lista").then(function (d) {
+      if (!d.ok) return msg($("msgLogin"), d.erro || "Não consegui entrar.", "erro");
+      try { localStorage.setItem("rv_api", api); } catch (e) {}
+      $("login").classList.add("oculto"); $("painel").classList.remove("oculto");
+      desenha(d.pendentes || []);
+    });
+  });
+  $("senha").addEventListener("keydown", function (e) { if (e.key === "Enter") $("entrar").click(); });
+
+  // ---- abas ----
+  function aba(manual) {
+    $("secPend").classList.toggle("oculto", manual); $("secManual").classList.toggle("oculto", !manual);
+    $("abaPend").className = manual ? "" : "on"; $("abaManual").className = manual ? "on" : "";
+  }
+  $("abaPend").addEventListener("click", function () { aba(false); });
+  $("abaManual").addEventListener("click", function () { aba(true); });
+
+  // ---- pendentes ----
+  function carregar() {
+    msg($("msgPend"), "Carregando...");
+    chamar("/admin/lista").then(function (d) {
+      if (!d.ok) return msg($("msgPend"), d.erro || "Erro.", "erro");
+      msg($("msgPend"), ""); desenha(d.pendentes || []);
+    });
+  }
+  $("atualizar").addEventListener("click", carregar);
+
+  function desenha(lista) {
+    var area = $("lista"); area.innerHTML = "";
+    $("qtd").textContent = lista.length ? "(" + lista.length + ")" : "";
+    if (!lista.length) { msg($("msgPend"), "Nenhuma avaliação esperando aprovação.", ""); return; }
+    lista.forEach(function (p) {
+      var c = document.createElement("div"); c.className = "caixa pend";
+      if (p.fotoUrls && p.fotoUrls.length) {
+        var fs = document.createElement("div"); fs.className = "fotos";
+        p.fotoUrls.forEach(function (u) { var im = document.createElement("img"); im.src = u; im.alt = "Foto"; fs.appendChild(im); });
+        c.appendChild(fs);
+      }
+      var corpo = document.createElement("div"); corpo.className = "corpo";
+      var e = document.createElement("div"); e.className = "est"; e.textContent = "★★★★★".slice(0, p.nota) + "☆☆☆☆☆".slice(0, 5 - p.nota);
+      var n = document.createElement("b"); n.textContent = p.nome;
+      var s = document.createElement("div"); s.className = "slug"; s.textContent = p.slug + " · " + (p.data || "");
+      var t = document.createElement("div"); t.className = "texto"; t.textContent = p.texto;
+      var ac = document.createElement("div"); ac.className = "acoes";
+      var ap = document.createElement("button"); ap.className = "v"; ap.textContent = "Aprovar";
+      var re = document.createElement("button"); re.className = "r"; re.textContent = "Recusar";
+      function acao(rota, botao, ok) {
+        ap.disabled = re.disabled = true; botao.textContent = "Aguarde...";
+        chamar(rota, { id: p.id }).then(function (d) {
+          if (d.ok) { c.remove(); msg($("msgPend"), ok, "ok"); $("qtd").textContent = ""; }
+          else { ap.disabled = re.disabled = false; ap.textContent = "Aprovar"; re.textContent = "Recusar"; msg($("msgPend"), d.erro || "Erro.", "erro"); }
+        });
+      }
+      ap.addEventListener("click", function () { acao("/admin/aprovar", ap, "Aprovada! Aparece na loja em cerca de 1 a 10 minutos."); });
+      re.addEventListener("click", function () { if (confirm("Recusar e apagar esta avaliação?")) acao("/admin/recusar", re, "Recusada."); });
+      ac.appendChild(ap); ac.appendChild(re);
+      [e, n, s, t, ac].forEach(function (x) { corpo.appendChild(x); });
+      c.appendChild(corpo); area.appendChild(c);
+    });
+  }
+
+  // ---- avaliacao manual ----
+  var nota = 0, fotos = [];
+  var estr = [];
+  for (var i = 1; i <= 5; i++) {
+    (function (i) {
+      var b = document.createElement("button"); b.type = "button"; b.textContent = "★";
+      b.addEventListener("click", function () { nota = i; estr.forEach(function (x, k) { x.className = k < nota ? "on" : ""; }); });
+      estr.push(b); $("mPick").appendChild(b);
+    })(i);
+  }
+  function reduzir(file) {
+    return new Promise(function (ok, erro) {
+      var rd = new FileReader();
+      rd.onerror = function () { erro(new Error("Não consegui ler a foto.")); };
+      rd.onload = function () {
+        var im = new Image();
+        im.onerror = function () { erro(new Error("Esse arquivo não parece ser uma foto.")); };
+        im.onload = function () {
+          var esc = Math.min(1, 1000 / Math.max(im.width, im.height));
+          var c = document.createElement("canvas"); c.width = Math.round(im.width * esc); c.height = Math.round(im.height * esc);
+          var g = c.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height); g.drawImage(im, 0, 0, c.width, c.height);
+          var q = 0.82, u = c.toDataURL("image/jpeg", q);
+          while (u.length > 450000 && q > 0.4) { q -= 0.1; u = c.toDataURL("image/jpeg", q); }
+          ok(u);
+        };
+        im.src = rd.result;
+      };
+      rd.readAsDataURL(file);
+    });
+  }
+  function desenhaPrevias() {
+    var area = $("mPrevis"); area.innerHTML = "";
+    fotos.forEach(function (u, k) {
+      var w = document.createElement("div"); w.className = "pv";
+      var im = document.createElement("img"); im.src = u; im.alt = "Prévia " + (k + 1);
+      var x = document.createElement("button"); x.type = "button"; x.textContent = "×";
+      x.addEventListener("click", function () { fotos.splice(k, 1); desenhaPrevias(); });
+      w.appendChild(im); w.appendChild(x); area.appendChild(w);
+    });
+  }
+  $("mFoto").addEventListener("change", function () {
+    var arqs = Array.prototype.slice.call(this.files || []); this.value = "";
+    var vagas = 3 - fotos.length;
+    if (!arqs.length) return;
+    if (vagas <= 0) return msg($("msgManual"), "Já são 3 fotos. Tire uma para trocar.", "erro");
+    msg($("msgManual"), arqs.length > vagas ? "Só cabem 3 fotos; usei as primeiras." : "Preparando as fotos...", "");
+    arqs.slice(0, vagas).reduce(function (cadeia, f) {
+      return cadeia.then(function () {
+        return reduzir(f).then(function (u) { fotos.push(u); desenhaPrevias(); }, function (e) { msg($("msgManual"), e.message, "erro"); });
+      });
+    }, Promise.resolve());
+  });
+  $("mEnviar").addEventListener("click", function () {
+    var slug = slugDe($("mLink").value), nome = $("mNome").value.trim(), texto = $("mTexto").value.trim();
+    if (!slug) return msg($("msgManual"), "Cole o link do produto.", "erro");
+    if (nome.length < 2) return msg($("msgManual"), "Escreva o nome.", "erro");
+    if (!nota) return msg($("msgManual"), "Escolha a nota.", "erro");
+    if (texto.length < 3) return msg($("msgManual"), "Escreva o comentário.", "erro");
+    $("mEnviar").disabled = true; msg($("msgManual"), "Publicando...");
+    chamar("/admin/manual", { slug: slug, nome: nome, nota: nota, texto: texto, fotos: fotos }).then(function (d) {
+      $("mEnviar").disabled = false;
+      if (!d.ok) return msg($("msgManual"), d.erro || "Erro.", "erro");
+      msg($("msgManual"), "Publicada! Aparece na loja em cerca de 1 a 10 minutos.", "ok");
+      $("mNome").value = ""; $("mTexto").value = ""; $("mFoto").value = ""; fotos = []; desenhaPrevias();
+      nota = 0; estr.forEach(function (x) { x.className = ""; });
+    });
+  });
+})();
+</script>
+</body>
+</html>
